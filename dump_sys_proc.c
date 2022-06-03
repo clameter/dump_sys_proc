@@ -38,53 +38,57 @@ static void dumpfs(const char *path)
 		fprintf(out, "D %s %s\n", path, errname());
 		return;
 	}
-	chdir(path);
 	while ((e = readdir(d))) {
+		char file[4096];
 		char buf[4096];
 		struct stat sb;
 		unsigned mode;
-		
-		lstat(e->d_name, &sb);
-		snprintf(buf, sizeof(buf), "%s/%s", path, e->d_name);
+
+		snprintf(file, sizeof(file), "%s/%s", path, e->d_name);
+
+		if (lstat(file, &sb) < 0) {
+			fprintf(out, "? %s %s\n", file, errname());
+			continue;
+		};
 
 		mode = sb.st_mode & 07777;
 
 		switch (e->d_type) {
 			case DT_BLK :
-				fprintf(out, "B %s %04o %d %d\n", buf, mode,
+				fprintf(out, "B %s %04o %d %d\n", file, mode,
 				       major(sb.st_dev), minor(sb.st_dev)); 
 				break;
 
 			case DT_CHR :
-				fprintf(out, "C %s %04o %d %d\n", buf, mode,
+				fprintf(out, "C %s %04o %d %d\n", file, mode,
 				       major(sb.st_dev), minor(sb.st_dev)); 
 				break;
 
 			case DT_FIFO :
-				fprintf(out, "F %s %04o\n", buf, mode);
+				fprintf(out, "F %s %04o\n", file, mode);
 				break;
 
 			case DT_LNK :
-				n = readlink(e->d_name, buf, sizeof(buf) - 1);
+				n = readlink(file, buf, sizeof(buf) - 1);
 				if (n < 0)
-					fprintf(out, "L %s/%s %s\n", path, e->d_name, errname());
+					fprintf(out, "L %s %s\n", file, errname());
 				else {
 					buf[n] = 0;
-					fprintf(out, "L %s/%s %s\n", path, e->d_name, buf);
+					fprintf(out, "L %s %s\n", file, buf);
 				}
 				break;
 
 			case DT_REG :
-				fh = open(e->d_name, O_RDONLY);
+				fh = open(file, O_RDONLY | O_NDELAY);
 				if (fh < 0)
-					fprintf(out, "F %s %04o %ld %s\n", buf, mode,
+					fprintf(out, "F %s %04o %ld %s\n", file, mode,
 						sb.st_size, errname());
 				else {
 					int n;
 
 					n = read(fh, buf, sizeof(buf) - 1);
 					if (n < 0) {
-						fprintf(out, "F %s/%s %04o %ld %s\n", path, e->d_name, sb.st_mode,
+						fprintf(out, "F %s %04o %ld read %s\n", file, sb.st_mode,
 							sb.st_size, errname());
 
 					} else {
@@ -100,7 +104,7 @@ static void dumpfs(const char *path)
 							n--;
 						}
 
-						fprintf(out, "F %s/%s %04o %ld = ", path, e->d_name, mode,
+						fprintf(out, "F %s %04o %ld = ", file, mode,
 							       sb.st_size ? sb.st_size : n);
 
 						if (n < 100 && !special(p, n))
@@ -110,21 +114,20 @@ static void dumpfs(const char *path)
 					}
 				}
 				close(fh);
-
 				break;
 
 			case DT_SOCK :
-				fprintf(out, "S %s %04o %ld\n", buf, mode, sb.st_dev); 
+				fprintf(out, "S %s %04o %ld\n", file, mode, sb.st_dev); 
 				break;
 
 			case DT_UNKNOWN:
-				fprintf(out, "U %s %04o\n", buf, mode);
+				fprintf(out, "U %s %04o\n", file, mode);
 				break;
 
 			case DT_DIR :
 				if (strcmp(".", e->d_name) == 0 || strcmp("..", e->d_name) == 0)
 					continue;
-				dumpfs(buf);
+				dumpfs(file);
 				break;
 		}
 	}
